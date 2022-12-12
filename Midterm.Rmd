@@ -1,0 +1,335 @@
+---
+title: "678_midterm"
+author: "Yalong Wang"
+date: "2022-12-03"
+output: html_document
+---
+
+## Abstract
+
+Engineering is the use of scientific principles to design and build machines, structures, and other objects, including bridges, tunnels, roads, and vehicles The discipline of engineering includes a wide range of more specialized engineering fields, each with a more specific emphasis on particular areas of applied mathematics, applied science, and types of applications. Engineering is a broad discipline that is often subdivided into several sub-disciplines. Thus, here comes the problem: which kind of graduate students can earn most salary. To figure out this problem, I built a multilevel model with group level specialization. This report will be written by 5 main parts: Abstract, Introduction, Method, Result, Discussion.
+
+## Introduction
+
+A relevant question is what determines the salary and the jobs these engineers are offered right after graduation. Various factors such as college grades, candidate skills, the proximity of the college to industrial hubs, the specialization one have, market conditions for specific industries determine this. On the basis of these various factors, my goal is to determine the salary of an engineering graduate in India and the predcit the salary with those variables.
+
+## Methods
+
+### Data Preprocessing
+
+I found the data set from a public website(<https://www.kaggle.com/datasets/manishkc06/engineering-graduate-salary-prediction>). The interpretation of the data is below:
+
+|     column names      | explanation                                                          |
+|:---------------------:|:-----------------------------------------------|
+|          ID           | A unique ID to identify a candidate                                  |
+|        Salary         | Annual CTC offered to the candidate (in INR)                         |
+|        Gender         | Candidate's gender                                                   |
+|          DOB          | Date of birth of the candidate                                       |
+|       CollegeID       | Unique ID identifying the university/college                         |
+|      CollegeTier      | Each college has been annotated as 1 or 2.                           |
+|        Degree         | Degree obtained/pursued by the candidate                             |
+|    Specialization     | Specialization pursued by the candidate                              |
+|      CollegeGPA       | Aggregate GPA at graduation                                          |
+|     CollegeCityID     | A unique ID to identify the city in which the college is located in. |
+|    CollegeCityTier    | The tier of the city in which the college is located in.             |
+|     CollegeState      | Name of the state in which the college is located                    |
+|    GraduationYear     | Year of graduation (Bachelor's degree)                               |
+|        English        | Scores in AMCAT English section                                      |
+|        Logical        | Score in AMCAT Logical ability section                               |
+|         Quant         | Score in AMCAT's Quantitative ability section                        |
+|        Domain         | Scores in AMCAT's domain module                                      |           |
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(PerformanceAnalytics)
+library(lme4)
+library(gridExtra)
+```
+
+### Data cleaning
+
+This has a lot of variables that are just basic information, and I decide to remove the useless variables, such as:ID, DOB, 10percentage and so force. For rest of variables, whether or not I use it, it depends on following analysis.
+
+```{r include=FALSE,echo=FALSE}
+orignal_data <- read.csv('/Users/yaron/Desktop/Engineering_graduate_salary.csv',header = T)
+orignal_data <- orignal_data[,c(-1,-3:-9,-14,-16)]
+```
+
+According to graduation year, it is not difficult to calculate how many years the person had graduated. So I do data cleaning in GraduationYear at frist.
+
+```{r}
+unique(orignal_data$GraduationYear)
+```
+
+I found an outlier here, 0, so I'm now going to remove it from the data. Secondly, I subtracted the GraduationYear from 2022 to find out how long it took after graduation.
+
+```{r echo=FALSE}
+orignal_data <- subset(orignal_data,orignal_data$GraduationYear != 0)
+orignal_data$GraduationYear <- 2022 - orignal_data$GraduationYear
+```
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+ggplot(data = orignal_data) + 
+  aes(x = GraduationYear, y = log(Salary)) + 
+  geom_point() + 
+  geom_smooth(formula = 'y ~ x', method = "lm") + 
+  labs(titile = "log(Salary) vs GraduationYear", x = "GraduationYear", y = "log(Salary)")
+```
+This figure shows the relationship between 'GraduationYear' and 'log(Salary)'. As you can see, when the 'GraduationYear' increases, the 'log(Salary)' adds as well.
+
+As far as I know, the degree is a vital factor to impact what kind of works students can find, it also effect how many salary the students earn. I am going to show how many people there are for different degrees.
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+Degree <- table(orignal_data$Degree)
+ggplot(as.data.frame(Degree)) +
+  aes(x = Var1, y = Freq) +
+  geom_col(fill = "#4E6EA6") +
+  labs(
+    x = "Degree",
+    y = "Count",
+    title = "The count of different degrees"
+  ) +
+  theme_minimal()
+```
+
+It is easy to see that most people have a bachelor's degree and a small number have a master's degree, so I decided to set the bachelor's degree to 0 and all master's degrees to 1 and then summarize the salary by different degrees.
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+orignal_data$Degree <- ifelse(orignal_data$Degree=='B.Tech/B.E.',0,1)
+ggplot(orignal_data) +
+  aes(x = ifelse(Degree==0,'Bachelor','Master'), y = Salary) +
+  geom_boxplot(fill = "#FF8C00") +
+  labs(x = "Degree", y = "Salary",title="The salary of different degree")+
+  coord_cartesian(ylim=c(50000,500000))+
+  theme_minimal()
+
+```
+
+Different degrees do not have a large impact on the overall salary, so I think this degree does not have a large impact on the salary.
+
+Obviously, If a student graduates from a better university, he/she will receive a higher salary after graduation. To prove this point, I used a box line plot with CollegeTier as the variable and salary as the output. The result was plotted as follows.
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+ggplot(orignal_data) +
+  aes(x = ifelse(CollegeTier ==1,'top1','top2'), y = Salary) +
+  geom_boxplot(fill = "#0C4C8A")+
+  coord_cartesian(ylim=c(50000,500000))+
+  labs(x = "College Tier", y = "Salary", title="The salary of different college tier") +
+  theme_minimal()
+```
+
+As the figure shows, it is easy to conclude that students graduates from different tier of college have very different salary, the number of '1' means that students graduate from top1 tier college and the number of '2' means that students graduate from top2 tier college. So we can use CollegeTier as a variable to predict salary.
+
+On the other hand, the tier of the city where the student graduated from may also affect the person's situation to find a job with high salary after graduation. In this case, I used the box line plot with CollegeCityTier as the variable and salary as the output as well. The result shows as follows:
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+ggplot(orignal_data) +
+  aes(x = ifelse(CollegeCityTier ==0,'Tier1','Tier2'), y = Salary) +
+  geom_boxplot(fill = "#AD6E6E") +
+  labs(x = "College City Tier", y = "Salary", title="The salary of different college city tier") +
+  coord_cartesian(ylim=c(50000,500000))+
+  theme_minimal()
+```
+
+As you can see, we can not find a huge differences between different college city tiers. So I decide to remove this variable.
+
+Besides,I guess that gender is an important variable to determine the person's salary. So I continue using the box line plot to judge whether or not it is a variable to predict the salary. The figure shows as the following:
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+ggplot(orignal_data) +
+  aes(x = Gender, y = Salary) +
+  geom_boxplot(fill = "#D11010") +
+  labs(x = "Gender", y = "Salary", title="The salary of different gender") +
+  coord_cartesian(ylim=c(50000,500000))+
+  theme_minimal()
+```
+
+As you can see, there is no obvious difference between two genders. whether male or female, the salary does not change significantly. So I decide to remove this variable.
+
+Specialization is a very important indicator, and different variables have different effects on different specialization. This report focuses how the impact of each variable on salary varies across specializations. I first list all the specializations and calculate their counts.
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+Specialization <- as.data.frame(table(orignal_data$Specialization))
+ggplot(Specialization) +
+  aes(x = reorder(Var1,Freq), y = Freq) +
+  geom_col(fill = "#228B22") +
+  labs(x = "Specialization", y = "counts", title="Counts of Specialization") +
+  theme_minimal() +
+  coord_flip()
+```
+
+As you can see, there are 42 specializations here, and the small amount of data for some of them is not useful to our analysis. However, I found that many specializations have similar names, such as 'industrial & management engineering' and 'industrial & production engineering', so I plan to merge them into one specialization.
+
+```{r echo=FALSE}
+for(i in (1:2996)){
+if(orignal_data$Specialization[i] == 'computer science & engineering'|
+   orignal_data$Specialization[i] == 'computer science and technology'|
+   orignal_data$Specialization[i] == 'computer networking'
+){
+  orignal_data$Specialization[i] <- 'computer science'
+}else if (orignal_data$Specialization[i] == 'instrumentation and control engineering'|
+        orignal_data$Specialization[i] =='instrumentation engineering'|
+        orignal_data$Specialization[i] =='electronics & instrumentation eng'|
+        orignal_data$Specialization[i] =='control and instrumentation engineering'|
+        orignal_data$Specialization[i] =='applied electronics and instrumentation'|
+        orignal_data$Specialization[i] =='electronics and instrumentation engineering'){
+  orignal_data$Specialization[i] <- 'instrumentation engineering'
+}else if (orignal_data$Specialization[i] =='information & communication technology'|
+        orignal_data$Specialization[i] =='information science engineering'|
+        orignal_data$Specialization[i] =='information science'|
+        orignal_data$Specialization[i] =='information technology'){
+  orignal_data$Specialization[i] <- 'information technology'
+}else if(orignal_data$Specialization[i] =='mechanical & production engineering'|
+        orignal_data$Specialization[i] =='mechanical and automation'|
+        orignal_data$Specialization[i] =='mechanical engineering'|
+        orignal_data$Specialization[i] =='mechatronics'){
+  orignal_data$Specialization[i] <- 'mechanical engineering'
+}else if (orignal_data$Specialization[i] =='industrial & management engineering'|
+        orignal_data$Specialization[i] =='industrial & production engineering'|
+        orignal_data$Specialization[i] =='industrial engineering'){
+  orignal_data$Specialization[i] <- 'industrial engineering'
+}else if (orignal_data$Specialization[i] == 'biomedical engineering'|
+        orignal_data$Specialization[i] == 'biotechnology'){
+  orignal_data$Specialization[i] <- 'biomedical engineering'
+}else if (orignal_data$Specialization[i] == 'aeronautical engineering'|
+        orignal_data$Specialization[i] == 'automobile/automotive engineering'){
+  orignal_data$Specialization[i] <- 'automobile engineering'
+}else if (orignal_data$Specialization[i] == 'electronics engineering'|
+        orignal_data$Specialization[i] == 'electronics and electrical engineering'|
+        orignal_data$Specialization[i] == 'electronics'|
+        orignal_data$Specialization[i] == 'electrical and power engineering'|
+        orignal_data$Specialization[i] == 'electrical engineering'){
+  orignal_data$Specialization[i] <- 'electronics engineering'
+}else if (orignal_data$Specialization[i] == 'electronics and communication engineering'|
+        orignal_data$Specialization[i] == 'telecommunication engineering'|
+        orignal_data$Specialization[i] == 'electronics & telecommunications'|
+        orignal_data$Specialization[i] == 'computer and communication engineering'){
+  orignal_data$Specialization[i] <- 'communication engineering'
+}else if (orignal_data$Specialization[i] == 'computer application'|
+        orignal_data$Specialization[i] == 'computer engineering'|
+        orignal_data$Specialization[i] =='electronics and computer engineering'){
+  orignal_data$Specialization[i] <- 'computer engineering'
+}else if (orignal_data$Specialization[i] == 'ceramic engineering'|
+        orignal_data$Specialization[i] == 'chemical engineering'|
+        orignal_data$Specialization[i] =='civil engineering'|
+        orignal_data$Specialization[i] == 'embedded systems technology'|
+        orignal_data$Specialization[i] == 'metallurgical engineering'){
+  orignal_data$Specialization[i] <- 'other'
+}}
+```
+
+After data cleaning, I have merged 42 majors into 11 majors, which are 'computer science', 'instrumentation engineering', 'information technology', 'mechanical engineering', 'industrial engineering', 'biomedical engineering', 'automobile engineering', 'electronics engineering', 'communication engineering', 'computer engineering', 'other'. Now, I recalculate their counts, the figure is drawn as follows.
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+Specialization <- as.data.frame(table(orignal_data$Specialization))
+ggplot(Specialization) +
+  aes(x = reorder(Var1,Freq), y = Freq) +
+  geom_col(fill = "#228B22") +
+  labs(x = "Specialization", y = "counts", title="Counts of Specialization") +
+  theme_minimal() +
+  coord_flip()
+```
+
+For the next step, I draw the Pearson correlation matrix to select the predictor for the rest of variables, which is score in AMCAT's different sections.
+
+```{r echo=FALSE, fig.height=4, fig.width=10, warning=FALSE}
+orignal_data_1 <- orignal_data %>% dplyr::select(English,Logical,Quant,Domain,Salary) %>% data.frame()
+chart.Correlation(orignal_data_1, histogram=TRUE, pch=20)
+```
+
+As the gragh shows, the variables of 'logical' and 'Quant' have relatively high correlation with 'Salary'. So I decide to select both of it as the predictors.
+
+### Model fitting
+
+I decide to use multilevel model to fit model. As to selection of variables, I also include 'CollegeTier', 'collegeGPA', 'GraduationYear'. Meanwhile, since 'Salary' is more or less skewed and have heavy tails, I took `log(Salary)` to create new ones.
+
+```{r echo=FALSE}
+orignal_data_2 <- orignal_data %>% dplyr::select(CollegeTier
+              ,collegeGPA,GraduationYear,Quant,nueroticism
+              ,Logical,Specialization,Salary) %>% data.frame()
+```
+
+```{r  warning=FALSE}
+model <- lmer(log(Salary) ~ CollegeTier
+              + collegeGPA + GraduationYear
+               + Logical + Quant
+              + (1 + CollegeTier
+              + collegeGPA + GraduationYear
+               + Logical + Quant| Specialization) 
+              ,data = orignal_data_2)
+```
+
+Here is the summary of model(fixed effect) and all variables here are considered as statistically significant at $\alpha$ = 0.5 level.
+
+|                |Estimate   |Std. Error  |t value |
+|:---:           |:---:      |:---:       |:---:   |
+|(Intercept)     |10.7429    |0.1974      |54.43   |
+|CollegeTier     |-0.2527    |0.0698      |-3.62   |
+|collegeGPA      |0.0077     |0.0023      |3.23    |
+|GraduationYear  |0.0781     |0.0228      |3.42    |
+|Logical         |0.0004     |0.0002      |1.64    |
+|Quant           |0.0012     |0.0004      |3.18    |
+
+
+And the following tables are the summary of random effects, which is random effect of Specialization.
+
+```{r echo=FALSE}
+round(ranef(model)$Specialization,digit = 4)
+```
+
+## Result
+
+### Interpretation
+
+Let's take 'computer science' for an example. We are able to get the following formula of fixed effect: 
+$$ log(Salary) = 1.4715  -0.0206\times CollegeTier -0.0001 \times collegeGPA -0.1258 \times GraduationYear -0.0004 \times Logical - 0.0002 \times Quant $$ 
+
+As the table shows, different specialization have huge differences, some part of coefficients are positive but another part are negative. In this case, we need to focus on a special specialization to research it variables.
+
+## Discussion
+
+
+### Model checking
+
+```{r echo=FALSE, fig.height=4, fig.width=8}
+plot(model)
+```
+
+The plot is residual plot. According to it, the mean value of residuals is approximately 0. Yet as the fitted value close to 0, there's no negative residuals.
+
+### Reference
+[1] Micheal, C. _Mixed Models with R_. https://m-clark.github.io/mixed-models-with-R/
+
+[2] Ayman Siraj. RPubs. Weblog. https://rpubs.com/aymansir/usflightdelay
+
+[3] Micheal, P. _Chapter 18: Testing the Assumptions of Multilevel Models_. 
+https://ademos.people.uic.edu/Chapter18.html
+
+## Appendix
+
+### Variable distributions
+
+```{r include=FALSE}
+dist_collegeGPA <- ggplot(data=orignal_data,aes(x=collegeGPA))+
+  geom_histogram(aes(y=..density..),bins=30,fill="#999999")+
+  geom_density(lwd=1,alpha=.4,fill="#999999")+labs(title="collegeGPA")
+
+dist_English<- ggplot(data=orignal_data,aes(x=English))+
+  geom_histogram(aes(y=..density..),bins=30,fill="#E69F00")+
+  geom_density(lwd=1,alpha=.4,fill="#E69F00")+labs(title="English")
+
+dist_Logical <- ggplot(data=orignal_data,aes(x=Logical ))+
+  geom_histogram(aes(y=..density..),bins=30,fill="#56B4E9")+
+  geom_density(lwd=1,alpha=.4,fill="#56B4E9")+labs(title="Logical")
+
+dist_Quant <- ggplot(data=orignal_data,aes(x=Quant))+
+  geom_histogram(aes(y=..density..),bins=30,fill="#009E73")+
+  geom_density(lwd=1,alpha=.4,fill="#009E73")+labs(title="Quant ")
+```
+
+```{r echo=FALSE, fig.height=4, fig.width=9}
+grid.arrange(dist_collegeGPA, dist_English, dist_Logical,dist_Quant, ncol = 2, nrow = 2)
+```
